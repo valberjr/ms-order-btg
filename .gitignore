@@ -34,3 +34,5 @@ build/
 
 ### Others ###
 .DS_Store
+
+mongodb.properties
