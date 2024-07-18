@@ -4,6 +4,7 @@ import com.example.ms_order_btg.entity.OrderEntity;
 import com.example.ms_order_btg.factory.OrderCreatedEventFactory;
 import com.example.ms_order_btg.factory.OrderEntityFactory;
 import com.example.ms_order_btg.repository.OrderRepository;
+import org.bson.Document;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,9 +13,11 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.query.Criteria;
 
 import java.math.BigDecimal;
 
@@ -22,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
@@ -37,6 +41,9 @@ class OrderServiceTest {
 
     @Captor
     ArgumentCaptor<OrderEntity> orderEntityArgumentCaptor;
+
+    @Captor
+    ArgumentCaptor<Aggregation> aggregationArgumentCaptor;
 
     @Nested
     class Save {
@@ -133,6 +140,69 @@ class OrderServiceTest {
             assertEquals(page.getContent().getFirst().getOrderId(), response.getContent().getFirst().orderId());
             assertEquals(page.getContent().getFirst().getCustomerId(), response.getContent().getFirst().customerId());
             assertEquals(page.getContent().getFirst().getTotal(), response.getContent().getFirst().total());
+        }
+    }
+
+    @Nested
+    class FindTotalOnOrdersByCustomerId {
+
+        @Test
+        void shouldCallMongoTemplate() {
+            // ARRANGE
+            var customerId = 1L;
+            var totalExpected = BigDecimal.valueOf(1);
+            var aggregationResult = mock(AggregationResults.class);
+
+            doReturn(new Document("total", totalExpected)).when(aggregationResult).getUniqueMappedResult();
+            doReturn(aggregationResult).when(mongoTemplate).aggregate(any(Aggregation.class), anyString(), eq(Document.class));
+
+            // ACT
+            var total = orderService.findTotalOnOrdersByCustomerId(customerId);
+
+            // ASSERT
+            verify(mongoTemplate, times(1)).aggregate(any(Aggregation.class), anyString(), eq(Document.class));
+
+            assertEquals(totalExpected, total);
+        }
+
+        @Test
+        void shouldUseCorrectAggregation() {
+            // ARRANGE
+            var customerId = 1L;
+            var totalExpected = BigDecimal.valueOf(1);
+            var aggregationResult = mock(AggregationResults.class);
+
+            doReturn(new Document("total", totalExpected)).when(aggregationResult).getUniqueMappedResult();
+            doReturn(aggregationResult).when(mongoTemplate).aggregate(aggregationArgumentCaptor.capture(), anyString(), eq(Document.class));
+
+            // ACT
+            orderService.findTotalOnOrdersByCustomerId(customerId);
+
+            // ASSERT
+            var aggregation = aggregationArgumentCaptor.getValue();
+            var aggregationExpected = newAggregation(
+                    match(Criteria.where("customerId").is(customerId)),
+                    group().sum("total").as("total")
+            );
+
+            assertEquals(aggregationExpected.toString(), aggregation.toString());
+        }
+
+        @Test
+        void shouldQueryCorrectTable() {
+            // ARRANGE
+            var customerId = 1L;
+            var totalExpected = BigDecimal.valueOf(1);
+            var aggregationResult = mock(AggregationResults.class);
+
+            doReturn(new Document("total", totalExpected)).when(aggregationResult).getUniqueMappedResult();
+            doReturn(aggregationResult).when(mongoTemplate).aggregate(any(Aggregation.class), eq("orders"), eq(Document.class));
+
+            // ACT
+            orderService.findTotalOnOrdersByCustomerId(customerId);
+
+            // ASSERT
+            verify(mongoTemplate, times(1)).aggregate(any(Aggregation.class), eq("orders"), eq(Document.class));
         }
     }
 }
